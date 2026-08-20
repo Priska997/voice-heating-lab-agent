@@ -70,3 +70,24 @@ Candidate stacks should be compared using:
 6. typed tool contracts and validation;
 7. easy simulated-device integration;
 8. a credible path from take-home MVP to production without pretending the MVP is production-ready.
+
+## Selected reference stack
+
+The 2026-08-21 reference implementation selects:
+
+| Concern | Selection |
+| --- | --- |
+| Language | TypeScript on Node.js 22 |
+| Agent-facing API | Fastify plus Zod |
+| Durable execution | Restate Server 1.7.2 and TypeScript SDK 1.16.4 |
+| Local deployment | Docker Compose with a persistent Restate volume |
+| Device | Restate-backed deterministic simulator behind `HeaterDevice` |
+| Tests | Vitest and explicit fake observation timestamps |
+| Voice/LLM | Provider adapter deliberately deferred; no API key required |
+
+The detailed decision records are:
+
+- [ADR 0001: Thin Agent and deterministic workflow](adr/0001-thin-agent-durable-workflow.md)
+- [ADR 0002: Restate for the reference runtime](adr/0002-restate-runtime.md)
+
+The selected runtime does not change the product facts above. In particular, it does not treat workflow-engine delivery guarantees as proof that a physical HTTP side effect happened exactly once.

@@ -38,6 +38,8 @@ Authentication, error payloads, retryability, temperature limits, and network ti
 - Previously accumulated valid time is not reset.
 - Polling cadence and measurement timestamp semantics must be explicit and testable.
 
+The reference implementation credits an interval only when both bounding observations are in range. It credits neither the interval that discovers a departure nor the interval that discovers a return. This is intentionally conservative and makes polling cadence the upper bound on ordinary timing undercount at a range transition.
+
 ## 5. Completion semantics
 
 Normal completion requires all of the following:
@@ -57,6 +59,7 @@ External push, SMS, email, or a separate notification product is out of scope. T
 - The agent may continue answering questions or invoking unrelated tools while heating runs.
 - A physical heater may have at most one active heating task.
 - Duplicate user requests and retrying clients must not create duplicate device side effects.
+- Reusing a request ID with changed device, temperature, duration, session, or confirmation evidence must be rejected as a conflict.
 
 ## 7. Proposed lifecycle
 
@@ -87,6 +90,8 @@ cancel_heating(task_id) -> cancellation accepted
 ```
 
 The LLM must not receive credentials or raw, arbitrary device endpoints.
+
+Starting a task also requires confirmation evidence bound to the Agent conversation turn. The reference schema records this evidence; a production Agent provider must issue it from a trusted server-side approval event rather than trusting an arbitrary model-generated boolean.
 
 ## 9. MVP acceptance criteria
 

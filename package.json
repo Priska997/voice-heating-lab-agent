@@ -1,0 +1,33 @@
+{
+  "name": "voice-heating-lab-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Architecture reference implementation for a voice-controlled laboratory heater agent.",
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "dev:gateway": "tsx watch src/gateway/main.ts",
+    "dev:runtime": "tsx watch src/runtime/main.ts",
+    "start:gateway": "node dist/gateway/main.js",
+    "start:runtime": "node dist/runtime/main.js",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@restatedev/restate-sdk": "1.16.4",
+    "fastify": "5.12.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "tsx": "4.19.2",
+    "typescript": "5.9.3",
+    "vitest": "3.2.6"
+  }
+}

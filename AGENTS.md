@@ -2,7 +2,7 @@
 
 ## Current phase
 
-This repository is in read-only requirements and architecture analysis. Do not implement application code until the user explicitly approves implementation.
+The user approved implementation on 2026-08-21. The repository is an architecture reference implementation: preserve the deterministic core and explicit boundaries before adding presentation features.
 
 ## Facts to preserve
 
@@ -27,6 +27,15 @@ When proposing a technical stack:
 5. Include a deterministic fake clock and simulated heater in the test strategy.
 6. Treat device API details, limits, polling cadence, and retry budgets as configuration or adapter contracts unless confirmed otherwise.
 7. Do not introduce infrastructure that cannot be run and reviewed easily by an external evaluator.
+
+## Implementation constraints
+
+- Keep the Voice Agent provider replaceable. Agent SDK types must not leak into domain or workflow code.
+- Public Agent tools operate on task-level commands; never expose raw heater methods to an LLM.
+- Changes to timing or terminal-state semantics require deterministic unit tests.
+- `HeatingRequest` owns request idempotency, `HeatingTaskAcceptance` closes the pre-workflow query window, `HeaterCoordinator` owns device exclusivity, `HeatingWorkflow` owns runtime lifecycle state, and `AgentInbox` owns in-agent delivery.
+- A device stays reserved after `NEEDS_ATTENTION`; only an explicit operator recovery flow may release it.
+- Do not describe an inbox acknowledgement as proof of audible playback unless the Agent provider sends it after playback completes.
 
 ## Safety
 
