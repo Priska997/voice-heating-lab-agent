@@ -13,7 +13,7 @@ Evidence recorded on 2026-08-21 against the current working implementation. Unit
 | 5 | Close succeeds before normal completion and announcement | reducer close test plus E2E completion event | Verified |
 | 6 | Cancellation attempts safe close | reducer cancellation test plus E2E repeated cancellation | Verified |
 | 7 | Close failure is visible and isolates the device | E2E `closeShouldFail`, `NEEDS_ATTENTION`, later start gets `DEVICE_BUSY` | Verified |
-| 8 | Restart does not lose state or skip safety | E2E stops runtime during HOLDING, resumes and completes | Verified for runtime restart |
+| 8 | Restart does not lose state or skip safety | E2E abruptly kills runtime during HOLDING, resumes and completes | Verified for runtime restart |
 | 9 | Same heater has one active task; different heaters run concurrently | E2E busy request and parallel-device cancellation | Verified |
 | 10 | Core tests need no real hardware, model or wall-clock hold | Vitest reducer tests and simulator | Verified |
 

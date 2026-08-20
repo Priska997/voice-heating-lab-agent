@@ -123,7 +123,7 @@ docker compose config      PASS
 pnpm test:e2e              PASS
 ```
 
-E2E 使用真实 Restate Server 1.7.2 和隔离 Compose project，验证 private ingress、非阻塞接受、404、幂等、设备锁、并行设备、取消、关闭失败、runtime restart、断档计时、持久投影和 pending delivery。详细映射见 [Verification matrix](verification-matrix.md)。
+E2E 使用真实 Restate Server 1.7.2 和隔离 Compose project，验证 private ingress、非阻塞接受、404、幂等、设备锁、并行设备、取消、关闭失败、runtime 被强制终止后的恢复、断档计时、持久投影和 pending delivery。详细映射见 [Verification matrix](verification-matrix.md)。
 
 ## 9. 下一阶段优先级
 

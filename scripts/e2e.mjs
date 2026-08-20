@@ -229,7 +229,9 @@ async function main() {
     restartTask.body.taskId,
     (task) => task.status === "HOLDING" && task.lastObservation !== null,
   );
-  compose("stop", "runtime");
+  // Use an abrupt kill: `compose stop` waits for its graceful timeout, which
+  // can let a short hold finish before the container actually stops on CI.
+  compose("kill", "-s", "SIGKILL", "runtime");
   await new Promise((resolve) => setTimeout(resolve, 1_500));
   compose("start", "runtime");
   const afterRestart = await waitForTask(
