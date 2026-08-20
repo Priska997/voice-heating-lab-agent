@@ -1,5 +1,7 @@
 import * as restate from "@restatedev/restate-sdk";
 
+import type { SimulatedHeaterAdminApi } from "./api.js";
+
 export interface SimulatorState {
   currentTemperatureC: number;
   targetTemperatureC: number | null;
@@ -25,6 +27,7 @@ const DEFAULT_STATE: Omit<SimulatorState, "lastUpdatedAtMs"> = {
 
 export const heaterDevice = restate.object({
   name: "HeaterDevice",
+  options: { ingressPrivate: true },
   handlers: {
     setTemperature: async (
       ctx: restate.ObjectContext<SimulatorState>,
@@ -118,6 +121,36 @@ export const heaterDevice = restate.object({
           ? {}
           : { closeShouldFail: input.closeShouldFail }),
       });
+    },
+  },
+});
+
+/**
+ * Evaluation-only control plane for deterministic fault injection. A real
+ * deployment must omit this service and register only its authenticated
+ * hardware adapter.
+ */
+export const simulatorAdmin = restate.service({
+  name: "SimulatorAdmin",
+  description: "Evaluation-only simulator configuration; do not deploy with real hardware.",
+  handlers: {
+    configure: async (
+      ctx: restate.Context,
+      input: {
+        deviceId: string;
+        currentTemperatureC?: number;
+        heatRateCPerSecond?: number;
+        coolRateCPerSecond?: number;
+        closeShouldFail?: boolean;
+      },
+    ) => {
+      const { deviceId, ...configuration } = input;
+      if (deviceId.length === 0) {
+        throw new restate.TerminalError("deviceId is required", { errorCode: 400 });
+      }
+      await ctx
+        .objectClient<SimulatedHeaterAdminApi>({ name: "HeaterDevice" }, deviceId)
+        .configureSimulator(configuration);
     },
   },
 });

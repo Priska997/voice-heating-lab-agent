@@ -36,7 +36,7 @@ These are explicit integration boundaries rather than hidden assumptions. See [P
 | Voice Agent Provider | speech, clarification, human confirmation UX, spoken output | heater credentials, hold timer, device state |
 | Agent Gateway | public Tool API, request validation, upstream error mapping | workflow state or device policy |
 | `HeatingRequest(requestId)` | idempotent start result and confirmation audit | task lifecycle |
-| `HeatingTaskAcceptance(taskId)` | immutable accepted-task snapshot before workflow initialization | runtime task transitions |
+| `HeatingTaskRecord(taskId)` | durable query projection and serialized cancel/complete arbitration | device polling |
 | `HeaterCoordinator(deviceId)` | single active task for a physical heater | temperature or hold calculation |
 | `HeatingWorkflow(taskId)` | lifecycle, durable timers, polling, timing reducer, close classification | natural-language decisions |
 | `HeaterDevice(deviceId)` | raw device contract and simulator state | user conversation or business completion |
@@ -54,8 +54,7 @@ sequenceDiagram
     participant Gateway as Agent Gateway
     participant Request as HeatingRequest(requestId)
     participant Lock as HeaterCoordinator(deviceId)
-    participant Accepted as HeatingTaskAcceptance(taskId)
-    participant Invoker as WorkflowInvoker
+    participant Record as HeatingTaskRecord(taskId)
     participant Workflow as HeatingWorkflow(taskId)
     participant Device as HeaterDevice(deviceId)
     participant Inbox as AgentInbox(sessionId)
@@ -71,17 +70,18 @@ sequenceDiagram
         Request-->>Agent: DEVICE_BUSY
     else device available
         Lock-->>Request: acquired = true
-        Request->>Accepted: initialize immutable STARTING snapshot
-        Request--)Invoker: durable background invocation
+        Request->>Record: initialize STARTING projection
+        Request--)Workflow: durable background invocation
         Request-->>Agent: 202 + taskId
         Note over Agent: The same Agent is free for other work now
-        Invoker->>Workflow: run
         Workflow->>Device: setTemperature(target)
         loop durable polling
             Workflow->>Device: getTemperature()
             Device-->>Workflow: temperature + observation time
             Workflow->>Workflow: deterministic timing transition
+            Workflow->>Record: update query projection
         end
+        Workflow->>Record: seal cancellation decision
         Workflow->>Device: close()
         alt close confirmed
             Workflow->>Lock: release(taskId)
@@ -93,11 +93,11 @@ sequenceDiagram
         Agent->>Inbox: list session events
         Agent->>User: Speak the result
         Agent->>Inbox: acknowledge after playback
-        Inbox->>Workflow: acknowledgeAnnouncement(eventId)
+        Inbox->>Record: acknowledge matching eventId
     end
 ```
 
-The `WorkflowInvoker` is intentionally separate. `HeatingRequest` first commits an immutable acceptance snapshot, then durably sends to the invoker and returns immediately. Status falls back to that snapshot until `HeatingWorkflow` has written runtime state, so an accepted task is immediately queryable. A cancellation signal can likewise be resolved before workflow initialization and is consumed as soon as the workflow starts.
+`HeatingRequest` first commits a queryable task record, then durably sends directly to the workflow and returns immediately. `HeatingTaskRecord` remains queryable beyond workflow-completion retention. It also serializes cancellation against the workflow's final close decision: if cancellation is recorded before sealing it overrides normal completion; after sealing the API returns `accepted: false`. A safety failure already classified before sealing remains a failure rather than being masked as cancellation. The workflow signal only wakes execution quickly and is not the source of the decision.
 
 ## 5. State machine
 
@@ -122,6 +122,7 @@ stateDiagram-v2
 
 - `IN_RANGE`: time may accumulate;
 - `PAUSED_OUT_OF_RANGE`: accumulated time is preserved but does not increase;
+- `PAUSED_STALE_OBSERVATION`: an unobserved gap is not credited;
 - `SATISFIED`: close is required before success.
 
 ## 6. Temperature observation semantics
@@ -139,7 +140,9 @@ Real hardware only provides discrete samples, so the system cannot know the exac
 3. the interval that discovers an out-of-range value does not count;
 4. the interval that discovers a return to range does not count;
 5. timestamps must be strictly increasing;
-6. accumulated time is clamped to the requested hold duration.
+6. timestamps cannot predate task acceptance;
+7. an interval longer than the configured maximum observation gap is not credited;
+8. accumulated time is clamped to the requested hold duration.
 
 If the first accepted in-range observation is timestamped at or after the configured heat-up deadline, the task fails closed. The workflow does not retroactively assume that the device entered range before the sample.
 
@@ -152,8 +155,8 @@ The pure reducer is implemented in `src/domain/heating-task.ts` and tested with 
 | Concern | Source of truth |
 | --- | --- |
 | Current physical temperature | Latest successful `HeaterDevice.getTemperature` result and observation time |
-| Workflow lifecycle and accumulated time | `HeatingWorkflow(taskId)` state and journal |
-| Accepted task before workflow initialization | `HeatingTaskAcceptance(taskId)` immutable snapshot |
+| Workflow execution and accumulated-time decisions | `HeatingWorkflow(taskId)` journal |
+| Long-lived query status and cancellation arbitration | `HeatingTaskRecord(taskId)` projection |
 | Request deduplication | `HeatingRequest(requestId)` result |
 | Physical-device ownership | `HeaterCoordinator(deviceId).activeTaskId` |
 | User confirmation evidence | `HeatingRequest(requestId).input.confirmation` |
@@ -195,7 +198,7 @@ The reference runtime intentionally stops at this boundary because no Agent prov
 
 ## 10. Completion and Agent reconnection
 
-The workflow publishes a stable event to `AgentInbox(agentSessionId)`. It does not need a live voice connection. When the same Agent session is available, it lists pending events, speaks the message, and acknowledges the event.
+The workflow publishes a stable event to `AgentInbox(agentSessionId)` and then completes; the physical workflow is not pinned while waiting for a voice connection. When the same application session is available, it lists pending events, speaks the message, and acknowledges the exact `eventId`. The inbox updates the durable task projection to `NOTIFIED`.
 
 For normal completion:
 
@@ -211,5 +214,7 @@ An acknowledgement proves only what the provider contract defines. A production 
 - Zod validates untrusted tool inputs at runtime.
 - Restate provides keyed single-writer state, durable calls, timers, signals, and restart recovery.
 - Docker Compose makes the runtime and embedded durable store reviewable without a cloud account.
+
+All raw device, workflow, lock, request, inbox, and task-record handlers are `ingressPrivate`. Only task-level `HeatingTools` and the explicitly evaluation-only `SimulatorAdmin` are reachable through public Restate ingress. Production must omit `SimulatorAdmin`, avoid publishing Restate admin ports, and configure workload identity.
 
 The rationale and alternatives are recorded in [ADR 0001](adr/0001-thin-agent-durable-workflow.md) and [ADR 0002](adr/0002-restate-runtime.md).

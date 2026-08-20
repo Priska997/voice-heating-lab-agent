@@ -16,10 +16,8 @@ import type {
   AgentInboxApi,
   HeaterCoordinatorApi,
   HeatingRequestApi,
-  HeatingTaskAcceptanceApi,
+  HeatingTaskRecordApi,
   HeatingWorkflowApi,
-  HeatingWorkflowInput,
-  WorkflowInvokerApi,
 } from "./api.js";
 import { heatingWorkflow } from "./heating-workflow.js";
 
@@ -28,17 +26,9 @@ type HeatingRequestState = {
   input: StartHeatingInput;
 };
 
-export const workflowInvoker = restate.service({
-  name: "WorkflowInvoker",
-  handlers: {
-    invoke: async (ctx: restate.Context, input: HeatingWorkflowInput) => {
-      await ctx.workflowClient(heatingWorkflow, input.taskId).run(input);
-    },
-  },
-});
-
 export const heatingRequest = restate.object({
   name: "HeatingRequest",
+  options: { ingressPrivate: true },
   handlers: {
     start: async (
       ctx: restate.ObjectContext<HeatingRequestState>,
@@ -83,7 +73,7 @@ export const heatingRequest = restate.object({
         startedAtMs: acceptedAtMs,
       });
       await ctx
-        .objectClient<HeatingTaskAcceptanceApi>({ name: "HeatingTaskAcceptance" }, taskId)
+        .objectClient<HeatingTaskRecordApi>({ name: "HeatingTaskRecord" }, taskId)
         .initialize({ task: acceptedTask });
 
       const accepted: StartHeatingResult = {
@@ -94,11 +84,12 @@ export const heatingRequest = restate.object({
       ctx.set("result", accepted);
       ctx.set("input", input);
 
-      ctx.serviceSendClient<WorkflowInvokerApi>({ name: "WorkflowInvoker" }).invoke({
+      ctx.workflowSendClient(heatingWorkflow, taskId).run({
         ...input,
         taskId,
         acceptedAtMs,
         pollIntervalMs: runtimeConfig.pollIntervalMs,
+        maximumObservationGapMs: runtimeConfig.maximumObservationGapMs,
         heatUpTimeoutMs: runtimeConfig.heatUpTimeoutMs,
       });
 
@@ -122,24 +113,26 @@ export const heatingTools = restate.service({
     getHeatingStatus: restate.createServiceHandler(
       { input: restate.serde.schema(getHeatingStatusSchema) },
       async (ctx: restate.Context, input) => {
-        const runtimeTask = await ctx
-          .workflowClient<HeatingWorkflowApi>({ name: "HeatingWorkflow" }, input.taskId)
-          .getStatus();
-        if (runtimeTask !== null) {
-          return runtimeTask;
-        }
-        return await ctx
-          .objectClient<HeatingTaskAcceptanceApi>({ name: "HeatingTaskAcceptance" }, input.taskId)
+        const acceptedTask = await ctx
+          .objectClient<HeatingTaskRecordApi>({ name: "HeatingTaskRecord" }, input.taskId)
           .get();
+        return acceptedTask;
       },
     ),
 
     cancelHeating: restate.createServiceHandler(
       { input: restate.serde.schema(cancelHeatingSchema) },
       async (ctx: restate.Context, input) => {
-        return await ctx
-          .workflowClient<HeatingWorkflowApi>({ name: "HeatingWorkflow" }, input.taskId)
-          .cancel({ requestedBy: input.requestedBy, reason: input.reason });
+        const cancellation = { requestedBy: input.requestedBy, reason: input.reason };
+        const result = await ctx
+          .objectClient<HeatingTaskRecordApi>({ name: "HeatingTaskRecord" }, input.taskId)
+          .requestCancellation(cancellation);
+        if (result.shouldSignal) {
+          await ctx
+            .workflowClient<HeatingWorkflowApi>({ name: "HeatingWorkflow" }, input.taskId)
+            .signalCancellation(cancellation);
+        }
+        return { accepted: result.accepted, status: result.status };
       },
     ),
 

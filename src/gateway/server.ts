@@ -32,21 +32,29 @@ export function buildGateway(restateIngressUrl: string): FastifyInstance {
     return reply.code(result.accepted ? 202 : 409).send(result);
   });
 
-  app.get("/v1/agent/tools/heating-status/:taskId", async (request) => {
+  app.get("/v1/agent/tools/heating-status/:taskId", async (request, reply) => {
     const input = getHeatingStatusSchema.parse(taskParamsSchema.parse(request.params));
-    return await restate.invoke<typeof input, HeatingTask | null>("getHeatingStatus", input);
+    const task = await restate.invoke<typeof input, HeatingTask | null>(
+      "getHeatingStatus",
+      input,
+    );
+    if (task === null) {
+      return reply.code(404).send({ error: "TASK_NOT_FOUND" });
+    }
+    return task;
   });
 
-  app.post("/v1/agent/tools/cancel-heating/:taskId", async (request) => {
+  app.post("/v1/agent/tools/cancel-heating/:taskId", async (request, reply) => {
     const { taskId } = taskParamsSchema.parse(request.params);
     const body = z
       .object({ requestedBy: z.string().min(1), reason: z.string().min(1).optional() })
       .parse(request.body);
     const input = cancelHeatingSchema.parse({ taskId, ...body });
-    return await restate.invoke<typeof input, { accepted: boolean; status: string }>(
+    const result = await restate.invoke<typeof input, { accepted: boolean; status: string }>(
       "cancelHeating",
       input,
     );
+    return reply.code(result.status === "NOT_FOUND" ? 404 : 200).send(result);
   });
 
   app.get("/v1/agent/sessions/:agentSessionId/events", async (request) => {

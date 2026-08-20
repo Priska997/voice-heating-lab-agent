@@ -9,6 +9,8 @@ const composeEnvironment = {
   GATEWAY_HOST_PORT: String(32_000 + portOffset),
   RESTATE_INGRESS_HOST_PORT: String(34_000 + portOffset),
   RESTATE_ADMIN_HOST_PORT: String(36_000 + portOffset),
+  POLL_INTERVAL_MS: "500",
+  MAXIMUM_OBSERVATION_GAP_MS: "1000",
 };
 const gatewayUrl = `http://127.0.0.1:${composeEnvironment.GATEWAY_HOST_PORT}`;
 const restateUrl = `http://127.0.0.1:${composeEnvironment.RESTATE_INGRESS_HOST_PORT}`;
@@ -38,13 +40,25 @@ async function request(path, init = {}) {
   };
 }
 
-async function invokeDevice(deviceId, handler, body) {
-  const response = await fetchWithTimeout(`${restateUrl}/HeaterDevice/${deviceId}/${handler}`, {
+async function configureSimulator(deviceId, configuration) {
+  const response = await fetchWithTimeout(`${restateUrl}/SimulatorAdmin/configure`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ deviceId, ...configuration }),
   });
   assert.equal(response.ok, true, await response.text());
+}
+
+async function assertInternalServiceIsPrivate(deviceId) {
+  const response = await fetchWithTimeout(
+    `${restateUrl}/HeaterDevice/${deviceId}/getTemperature`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ taskId: "bypass-attempt" }),
+    },
+  );
+  assert.equal(response.ok, false, "raw device handlers must reject public ingress calls");
 }
 
 async function fetchWithTimeout(url, init) {
@@ -85,6 +99,12 @@ async function taskStatus(taskId) {
   return response.body;
 }
 
+async function pendingEvents(agentSessionId) {
+  const response = await request(`/v1/agent/sessions/${agentSessionId}/events`);
+  assert.equal(response.status, 200);
+  return response.body;
+}
+
 async function waitForTask(taskId, predicate, timeoutMs = 25_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -114,6 +134,7 @@ async function waitForGateway() {
 async function main() {
   compose("up", "--build", "-d");
   await waitForGateway();
+  await assertInternalServiceIsPrivate(`${runId}-private-boundary`);
 
   const primaryInput = startInput("primary", `${runId}-heater-primary`, 4);
   const startedAt = performance.now();
@@ -125,6 +146,20 @@ async function main() {
 
   const immediate = await taskStatus(primary.body.taskId);
   assert.notEqual(immediate, null, "an accepted task must be immediately queryable");
+
+  const missingStatus = await request(`/v1/agent/tools/heating-status/${randomUUID()}`);
+  assert.equal(missingStatus.status, 404);
+  assert.equal(missingStatus.body.error, "TASK_NOT_FOUND");
+
+  const missingCancellation = await request(
+    `/v1/agent/tools/cancel-heating/${randomUUID()}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ requestedBy: "e2e-agent", reason: "UNKNOWN_TASK" }),
+    },
+  );
+  assert.equal(missingCancellation.status, 404);
+  assert.equal(missingCancellation.body.status, "NOT_FOUND");
 
   const retry = await start(primaryInput);
   assert.equal(retry.status, 202);
@@ -147,13 +182,21 @@ async function main() {
   });
   assert.equal(cancelled.status, 200);
   assert.equal(cancelled.body.accepted, true);
+  const repeatedCancellation = await request(
+    `/v1/agent/tools/cancel-heating/${parallel.body.taskId}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ requestedBy: "e2e-agent", reason: "E2E_IMMEDIATE_CANCEL" }),
+    },
+  );
+  assert.equal(repeatedCancellation.status, 200);
+  assert.equal(repeatedCancellation.body.accepted, true);
   await waitForTask(parallel.body.taskId, (task) => task.status === "CANCELLED");
 
   await waitForTask(primary.body.taskId, (task) => task.status === "COMPLETED");
-  const eventsResponse = await request(
-    `/v1/agent/sessions/${primaryInput.agentSessionId}/events`,
+  const primaryEvents = (await pendingEvents(primaryInput.agentSessionId)).filter(
+    (event) => event.taskId === primary.body.taskId,
   );
-  const primaryEvents = eventsResponse.body.filter((event) => event.taskId === primary.body.taskId);
   assert.equal(primaryEvents.length, 1);
   const acknowledgement = await request(
     `/v1/agent/sessions/${primaryInput.agentSessionId}/events/${primaryEvents[0].eventId}/acknowledge`,
@@ -162,9 +205,16 @@ async function main() {
   assert.equal(acknowledgement.status, 200, JSON.stringify(acknowledgement.body));
   assert.equal(acknowledgement.body.acknowledged, true);
   await waitForTask(primary.body.taskId, (task) => task.status === "NOTIFIED");
+  assert.equal(
+    (await pendingEvents(primaryInput.agentSessionId)).some(
+      (event) => event.taskId === primary.body.taskId,
+    ),
+    false,
+    "acknowledged events must not be replayed as pending",
+  );
 
   const failingDevice = `${runId}-heater-close-failure`;
-  await invokeDevice(failingDevice, "configureSimulator", { closeShouldFail: true });
+  await configureSimulator(failingDevice, { closeShouldFail: true });
   const failing = await start(startInput("close-failure", failingDevice, 1, 20));
   assert.equal(failing.status, 202);
   await waitForTask(failing.body.taskId, (task) => task.status === "NEEDS_ATTENTION");
@@ -175,19 +225,32 @@ async function main() {
   const restartInput = startInput("restart", `${runId}-heater-restart`, 4, 20);
   const restartTask = await start(restartInput);
   assert.equal(restartTask.status, 202);
-  await waitForTask(restartTask.body.taskId, (task) => task.status === "HOLDING");
-  compose("restart", "runtime");
-  await waitForTask(restartTask.body.taskId, (task) => task.status === "COMPLETED", 30_000);
-  const restartEvents = await request(
-    `/v1/agent/sessions/${restartInput.agentSessionId}/events`,
+  const beforeRestart = await waitForTask(
+    restartTask.body.taskId,
+    (task) => task.status === "HOLDING" && task.lastObservation !== null,
   );
+  compose("stop", "runtime");
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  compose("start", "runtime");
+  const afterRestart = await waitForTask(
+    restartTask.body.taskId,
+    (task) =>
+      task.status === "HOLDING" &&
+      task.lastObservation?.observedAtMs > beforeRestart.lastObservation.observedAtMs &&
+      task.holdCondition === "PAUSED_STALE_OBSERVATION",
+    30_000,
+  );
+  assert.equal(afterRestart.holdCondition, "PAUSED_STALE_OBSERVATION");
+  await waitForTask(restartTask.body.taskId, (task) => task.status === "COMPLETED", 30_000);
   assert.equal(
-    restartEvents.body.filter((event) => event.taskId === restartTask.body.taskId).length,
+    (await pendingEvents(restartInput.agentSessionId)).filter(
+      (event) => event.taskId === restartTask.body.taskId,
+    ).length,
     1,
   );
 
   process.stdout.write(
-    "E2E passed: async acceptance, idempotency, locking, cancellation, close failure, restart, and single delivery.\n",
+    "E2E passed: private service boundary, async acceptance, not-found semantics, idempotency, locking, idempotent cancellation, close failure, restart-gap safety, durable task projection, and pending delivery.\n",
   );
 }
 
@@ -202,7 +265,7 @@ try {
   throw error;
 } finally {
   try {
-    compose("down", "--remove-orphans");
+    compose("down", "--volumes", "--remove-orphans");
   } catch {
     // Compose startup may have failed before creating resources.
   }

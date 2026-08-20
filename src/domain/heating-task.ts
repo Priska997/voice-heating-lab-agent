@@ -15,6 +15,7 @@ export type HoldCondition =
   | "NOT_STARTED"
   | "IN_RANGE"
   | "PAUSED_OUT_OF_RANGE"
+  | "PAUSED_STALE_OBSERVATION"
   | "SATISFIED";
 
 export type CloseIntent = "NORMAL_COMPLETION" | "CANCELLATION" | "FAILURE";
@@ -106,10 +107,17 @@ export function observeTemperature(
   task: HeatingTask,
   temperatureC: number,
   observedAtMs: number,
+  maximumCreditableGapMs = Number.POSITIVE_INFINITY,
 ): HeatingTask {
   assertStatus(task, ["HEATING", "HOLDING"]);
   assertValidObservationNumber("temperatureC", temperatureC);
   assertValidObservationNumber("observedAtMs", observedAtMs);
+
+  if (observedAtMs < task.startedAtMs) {
+    throw new InvalidTemperatureObservationError(
+      "temperature observations cannot predate the task",
+    );
+  }
 
   const previous = task.lastObservation;
   if (previous !== null && observedAtMs <= previous.observedAtMs) {
@@ -117,12 +125,22 @@ export function observeTemperature(
       "temperature observations must have strictly increasing timestamps",
     );
   }
+  if (
+    maximumCreditableGapMs !== Number.POSITIVE_INFINITY &&
+    (!Number.isFinite(maximumCreditableGapMs) || maximumCreditableGapMs <= 0)
+  ) {
+    throw new InvalidTemperatureObservationError(
+      "maximumCreditableGapMs must be positive and finite",
+    );
+  }
 
   const inRange = Math.abs(temperatureC - task.targetTemperatureC) <= task.toleranceC;
   const observation: TemperatureObservation = { temperatureC, observedAtMs, inRange };
   let accumulatedInRangeMs = task.accumulatedInRangeMs;
+  const observationGapMs = previous === null ? 0 : observedAtMs - previous.observedAtMs;
+  const staleObservationGap = observationGapMs > maximumCreditableGapMs;
 
-  if (previous?.inRange === true && inRange) {
+  if (previous?.inRange === true && inRange && !staleObservationGap) {
     accumulatedInRangeMs = Math.min(
       task.holdDurationMs,
       accumulatedInRangeMs + observedAtMs - previous.observedAtMs,
@@ -157,7 +175,11 @@ export function observeTemperature(
   return {
     ...task,
     status: "HOLDING",
-    holdCondition: inRange ? "IN_RANGE" : "PAUSED_OUT_OF_RANGE",
+    holdCondition: !inRange
+      ? "PAUSED_OUT_OF_RANGE"
+      : staleObservationGap
+        ? "PAUSED_STALE_OBSERVATION"
+        : "IN_RANGE",
     accumulatedInRangeMs,
     firstInRangeAtMs,
     lastObservation: observation,
@@ -168,9 +190,10 @@ export function observeTemperatureOrRequestShutdown(
   task: HeatingTask,
   temperatureC: number,
   observedAtMs: number,
+  maximumCreditableGapMs = Number.POSITIVE_INFINITY,
 ): HeatingTask {
   try {
-    return observeTemperature(task, temperatureC, observedAtMs);
+    return observeTemperature(task, temperatureC, observedAtMs, maximumCreditableGapMs);
   } catch (error) {
     if (!(error instanceof InvalidTemperatureObservationError)) {
       throw error;
@@ -195,6 +218,26 @@ export function requestCancellation(task: HeatingTask, reason = "USER_REQUESTED"
   return {
     ...task,
     status: "CLOSING",
+    closeIntent: "CANCELLATION",
+    terminalReason: reason,
+  };
+}
+
+/**
+ * Resolves the narrow race between the final qualifying observation and an
+ * already-accepted cancellation. The serialized task record decides whether
+ * cancellation was accepted before the workflow sealed the close decision.
+ */
+export function applyAcceptedCancellationBeforeClose(
+  task: HeatingTask,
+  reason = "USER_REQUESTED",
+): HeatingTask {
+  assertStatus(task, ["CLOSING"]);
+  if (task.closeIntent !== "NORMAL_COMPLETION") {
+    return task;
+  }
+  return {
+    ...task,
     closeIntent: "CANCELLATION",
     terminalReason: reason,
   };

@@ -38,9 +38,9 @@ Pin Node.js 22, Restate Server 1.7.2, and TypeScript SDK 1.16.4. Use a persisten
 The source-of-truth mapping is:
 
 - `HeatingRequest(requestId)`: idempotent acceptance and confirmation audit;
-- `HeatingTaskAcceptance(taskId)`: immutable pre-workflow status snapshot;
+- `HeatingTaskRecord(taskId)`: durable query projection and serialized cancellation gate;
 - `HeaterCoordinator(deviceId)`: device reservation;
-- `HeatingWorkflow(taskId)`: task state and timing history;
+- `HeatingWorkflow(taskId)`: execution and timing journal;
 - `AgentInbox(agentSessionId)`: in-Agent completion events.
 
 ## Consequences
@@ -66,6 +66,7 @@ The source-of-truth mapping is:
 - Do not enable preview protocol features for this MVP.
 - Keep the pure timing reducer independent of Restate.
 - Keep the Fastify gateway contract independent of Restate ingress paths.
+- Mark every internal service `ingressPrivate`; expose only task-level tools.
 - Treat real device calls as uncertain external side effects and implement read-back verification.
 
 ## Revisit when

@@ -12,11 +12,13 @@ This system distinguishes business failure, confirmed safe shutdown, and uncerta
 | Device already claimed | Reject new task | no new workflow | held by original task | `DEVICE_BUSY` |
 | `setTemperature` rejected | Attempt close | `FAILED` if close succeeds | released after close | alert |
 | Temperature read rejected | Stop timing and attempt close | `FAILED` if close succeeds | released after close | alert |
-| Invalid/stale temperature observation | Stop timing and attempt close | `FAILED` if close succeeds | released after close | alert |
+| Invalid/old temperature observation | Stop timing and attempt close | `FAILED` if close succeeds | released after close | alert |
+| Observation gap exceeds configured maximum | Preserve accumulated time and resume from a new segment | remains `HOLDING` | retained | no premature completion |
 | Heat-up timeout | Attempt close | `FAILED` if close succeeds | released after close | alert |
 | User cancellation | Attempt close | `CANCELLED` if close succeeds | released after close | cancellation event |
 | Hold satisfied | Attempt close | `COMPLETED` only after close | released after close | completion event |
 | `close` reports failure | Never claim success | `NEEDS_ATTENTION` | **retained** | urgent alert |
+| Close confirmed but reservation release is inconsistent | Preserve confirmed `closedAtMs`; raise control-plane failure | `FAILED` | retained until operator reconciliation | safe-failure alert |
 | Runtime process restarts | Restate replays recorded operations and resumes | previous durable state | preserved | no duplicate normal event |
 | Agent voice connection absent | Retain event in session inbox | `COMPLETED` | already released | deliver on next Agent opportunity |
 | Restate unavailable before acceptance | Gateway returns upstream unavailable | no accepted task | no claimed success | retry with same `requestId` |
@@ -58,7 +60,7 @@ It must not be an unrestricted LLM Tool.
 
 ## Measurement failures
 
-The timing reducer requires strictly increasing observation timestamps. Duplicate or older timestamps are rejected rather than credited. Production adapters should also define:
+The timing reducer requires strictly increasing observation timestamps that do not predate task acceptance. Duplicate or older timestamps are rejected rather than credited. Gaps beyond `MAXIMUM_OBSERVATION_GAP_MS` are treated as unobserved time and are not credited. Production adapters should also define:
 
 - maximum acceptable reading age;
 - clock source and synchronization policy;

@@ -37,6 +37,7 @@ Authentication, error payloads, retryability, temperature limits, and network ti
 - When temperature returns to range, the timer resumes from the accumulated value.
 - Previously accumulated valid time is not reset.
 - Polling cadence and measurement timestamp semantics must be explicit and testable.
+- Unobserved gaps longer than the configured maximum must not be credited as valid hold time.
 
 The reference implementation credits an interval only when both bounding observations are in range. It credits neither the interval that discovers a departure nor the interval that discovers a return. This is intentionally conservative and makes polling cadence the upper bound on ordinary timing undercount at a range transition.
 
@@ -60,6 +61,7 @@ External push, SMS, email, or a separate notification product is out of scope. T
 - A physical heater may have at most one active heating task.
 - Duplicate user requests and retrying clients must not create duplicate device side effects.
 - Reusing a request ID with changed device, temperature, duration, session, or confirmation evidence must be rejected as a conflict.
+- Cancellation and normal completion must have one serialized decision point: if cancellation is reported as accepted before completion is sealed, the normal completion path cannot win silently.
 
 ## 7. Proposed lifecycle
 

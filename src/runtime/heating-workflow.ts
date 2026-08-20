@@ -2,11 +2,11 @@ import * as restate from "@restatedev/restate-sdk";
 
 import type { CompletionEvent } from "../contracts/heating-tools.js";
 import {
+  applyAcceptedCancellationBeforeClose,
   createHeatingTask,
   hasHeatUpTimedOut,
   markHeatingStarted,
   observeTemperatureOrRequestShutdown,
-  recordAnnouncement,
   recordCloseFailed,
   recordCloseSucceeded,
   requestCancellation,
@@ -18,6 +18,7 @@ import type {
   CancellationRequest,
   HeaterCoordinatorApi,
   HeaterDeviceApi,
+  HeatingTaskRecordApi,
   HeatingWorkflowInput,
 } from "./api.js";
 
@@ -26,7 +27,6 @@ type WorkflowState = {
 };
 
 const CANCELLATION_PROMISE = "cancellation-requested";
-const ANNOUNCEMENT_PROMISE = "announcement-acknowledged";
 
 type LoopOutcome =
   | { kind: "POLL" }
@@ -34,6 +34,7 @@ type LoopOutcome =
 
 export const heatingWorkflow = restate.workflow({
   name: "HeatingWorkflow",
+  options: { ingressPrivate: true },
   handlers: {
     run: async (
       ctx: restate.WorkflowContext<WorkflowState>,
@@ -49,22 +50,37 @@ export const heatingWorkflow = restate.workflow({
         holdDurationMs: input.holdDurationS * 1_000,
         startedAtMs,
       });
-      persistTask(ctx, task);
+      await persistTask(ctx, task);
 
-      const device = ctx.objectClient<HeaterDeviceApi>({ name: "HeaterDevice" }, input.deviceId);
-      const setResult = await device.setTemperature({
-        taskId: task.taskId,
-        targetTemperatureC: task.targetTemperatureC,
-      });
+      const taskRecord = ctx.objectClient<HeatingTaskRecordApi>(
+        { name: "HeatingTaskRecord" },
+        task.taskId,
+      );
 
-      if (setResult.accepted) {
-        task = markHeatingStarted(task);
+      const cancellationSignal = ctx.promise<CancellationRequest>(CANCELLATION_PROMISE);
+      const cancellationBeforeStart = await taskRecord.getCancellation();
+      const device = ctx.objectClient<HeaterDeviceApi>(
+        { name: "HeaterDevice" },
+        input.deviceId,
+      );
+
+      if (cancellationBeforeStart !== null) {
+        task = requestCancellation(task, cancellationBeforeStart.reason);
       } else {
-        task = requestFailureShutdown(task, setResult.reason ?? "SET_TEMPERATURE_REJECTED");
-      }
-      persistTask(ctx, task);
+        const setResult = await device.setTemperature({
+          taskId: task.taskId,
+          targetTemperatureC: task.targetTemperatureC,
+        });
 
-      const cancellation = ctx.promise<CancellationRequest>(CANCELLATION_PROMISE).get();
+        if (setResult.accepted) {
+          task = markHeatingStarted(task);
+        } else {
+          task = requestFailureShutdown(task, setResult.reason ?? "SET_TEMPERATURE_REJECTED");
+        }
+      }
+      await persistTask(ctx, task);
+
+      const cancellation = cancellationSignal.get();
 
       while (task.status === "HEATING" || task.status === "HOLDING") {
         const outcome = await restate.RestatePromise.race([
@@ -79,20 +95,20 @@ export const heatingWorkflow = restate.workflow({
 
         if (outcome.kind === "CANCEL") {
           task = requestCancellation(task, outcome.request.reason);
-          persistTask(ctx, task);
+          await persistTask(ctx, task);
           break;
         }
 
         const reading = await device.getTemperature({ taskId: task.taskId });
         if (!reading.ok || reading.temperatureC === undefined || reading.observedAtMs === undefined) {
           task = requestFailureShutdown(task, reading.reason ?? "TEMPERATURE_READ_FAILED");
-          persistTask(ctx, task);
+          await persistTask(ctx, task);
           break;
         }
 
         if (hasHeatUpTimedOut(task, reading.observedAtMs, input.heatUpTimeoutMs)) {
           task = requestFailureShutdown(task, "HEAT_UP_TIMEOUT");
-          persistTask(ctx, task);
+          await persistTask(ctx, task);
           break;
         }
 
@@ -100,8 +116,18 @@ export const heatingWorkflow = restate.workflow({
           task,
           reading.temperatureC,
           reading.observedAtMs,
+          input.maximumObservationGapMs,
         );
-        persistTask(ctx, task);
+        await persistTask(ctx, task);
+      }
+
+      const cancellationDecision = await taskRecord.sealCancellation();
+      if (cancellationDecision.cancellation !== null) {
+        task = applyAcceptedCancellationBeforeClose(
+          task,
+          cancellationDecision.cancellation.reason,
+        );
+        await persistTask(ctx, task);
       }
 
       const closeResult = await device.close({ taskId: task.taskId });
@@ -109,7 +135,7 @@ export const heatingWorkflow = restate.workflow({
       task = closeResult.closed
         ? recordCloseSucceeded(task, closeObservedAtMs)
         : recordCloseFailed(task, closeResult.reason ?? "CLOSE_UNCONFIRMED");
-      persistTask(ctx, task);
+      await persistTask(ctx, task);
 
       if (closeResult.closed) {
         const release = await ctx
@@ -118,65 +144,42 @@ export const heatingWorkflow = restate.workflow({
         if (!release.released) {
           task = {
             ...task,
-            status: "NEEDS_ATTENTION",
+            status: "FAILED",
             terminalReason: "DEVICE_RESERVATION_RELEASE_FAILED",
           };
-          persistTask(ctx, task);
+          await persistTask(ctx, task);
         }
       }
 
       const event = completionEvent(ctx, task, closeObservedAtMs);
+      await taskRecord.recordCompletionEvent({ eventId: event.eventId });
       await ctx
         .objectClient<AgentInboxApi>({ name: "AgentInbox" }, task.agentSessionId)
         .publish(event);
 
-      if (task.status === "COMPLETED") {
-        await ctx.promise<{ eventId: string }>(ANNOUNCEMENT_PROMISE);
-        task = recordAnnouncement(task, await ctx.date.now());
-        persistTask(ctx, task);
-      }
-
       return task;
     },
 
-    getStatus: async (ctx: restate.WorkflowSharedContext<WorkflowState>) => {
-      return await ctx.get("task");
-    },
-
-    cancel: async (
+    signalCancellation: async (
       ctx: restate.WorkflowSharedContext<WorkflowState>,
       input: CancellationRequest,
     ) => {
-      const task = await ctx.get("task");
-      if (task === null) {
-        await ctx.promise<CancellationRequest>(CANCELLATION_PROMISE).resolve(input);
-        return { accepted: true, status: "STARTING" as const };
+      const cancellation = ctx.promise<CancellationRequest>(CANCELLATION_PROMISE);
+      if ((await cancellation.peek()) === undefined) {
+        await cancellation.resolve(input);
       }
-      if (!["STARTING", "HEATING", "HOLDING"].includes(task.status)) {
-        return { accepted: false, status: task.status };
-      }
-
-      await ctx.promise<CancellationRequest>(CANCELLATION_PROMISE).resolve(input);
-      return { accepted: true, status: task.status };
-    },
-
-    acknowledgeAnnouncement: async (
-      ctx: restate.WorkflowSharedContext<WorkflowState>,
-      input: { eventId: string },
-    ) => {
-      const task = await ctx.get("task");
-      if (task === null || task.status !== "COMPLETED") {
-        return { accepted: false };
-      }
-
-      await ctx.promise<{ eventId: string }>(ANNOUNCEMENT_PROMISE).resolve(input);
-      return { accepted: true };
     },
   },
 });
 
-function persistTask(ctx: restate.WorkflowContext<WorkflowState>, task: HeatingTask): void {
+async function persistTask(
+  ctx: restate.WorkflowContext<WorkflowState>,
+  task: HeatingTask,
+): Promise<void> {
   ctx.set("task", task);
+  await ctx
+    .objectClient<HeatingTaskRecordApi>({ name: "HeatingTaskRecord" }, task.taskId)
+    .update({ task });
 }
 
 function completionEvent(

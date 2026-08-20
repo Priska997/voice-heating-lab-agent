@@ -1,7 +1,7 @@
 import * as restate from "@restatedev/restate-sdk";
 
 import type { CompletionEvent } from "../contracts/heating-tools.js";
-import type { HeatingWorkflowApi } from "./api.js";
+import type { HeatingTaskRecordApi } from "./api.js";
 
 type InboxState = {
   events: CompletionEvent[];
@@ -9,6 +9,7 @@ type InboxState = {
 
 export const agentInbox = restate.object({
   name: "AgentInbox",
+  options: { ingressPrivate: true },
   handlers: {
     publish: async (ctx: restate.ObjectContext<InboxState>, event: CompletionEvent) => {
       const events = (await ctx.get("events")) ?? [];
@@ -18,7 +19,8 @@ export const agentInbox = restate.object({
     },
 
     list: restate.handlers.object.shared(async (ctx: restate.ObjectSharedContext<InboxState>) => {
-      return (await ctx.get("events")) ?? [];
+      const events = (await ctx.get("events")) ?? [];
+      return events.filter((event) => event.acknowledgedAtMs === null);
     }),
 
     acknowledge: async (
@@ -39,19 +41,30 @@ export const agentInbox = restate.object({
         return { acknowledged: true, event: existing };
       }
 
+      const notifiedAtMs = await ctx.date.now();
       const acknowledged: CompletionEvent = {
         ...existing,
-        acknowledgedAtMs: await ctx.date.now(),
+        acknowledgedAtMs: notifiedAtMs,
       };
+
+      if (acknowledged.kind === "HEATING_COMPLETED") {
+        const result = await ctx
+          .objectClient<HeatingTaskRecordApi>(
+            { name: "HeatingTaskRecord" },
+            acknowledged.taskId,
+          )
+          .acknowledgeAnnouncement({
+            eventId: acknowledged.eventId,
+            notifiedAtMs,
+          });
+        if (!result.accepted) {
+          throw new restate.TerminalError("completion acknowledgement did not match its task");
+        }
+      }
+
       const updated = [...events];
       updated[index] = acknowledged;
       ctx.set("events", updated);
-
-      if (acknowledged.kind === "HEATING_COMPLETED") {
-        await ctx
-          .workflowClient<HeatingWorkflowApi>({ name: "HeatingWorkflow" }, acknowledged.taskId)
-          .acknowledgeAnnouncement({ eventId: acknowledged.eventId });
-      }
 
       return { acknowledged: true, event: acknowledged };
     },

@@ -4,6 +4,10 @@ An architecture reference implementation for a hands-free laboratory assistant t
 
 The repository deliberately puts the LLM outside the physical safety-control loop. Language understanding is replaceable; heating, timing, locking, recovery, and shutdown are deterministic.
 
+> **Implemented and runnable:** the task-level Agent API, durable control workflow, simulator, cancellation, recovery, session inbox, and tests.
+>
+> **Deliberately deferred:** a real Voice Agent provider, trusted identity/confirmation, and a real heater adapter. This is a control-plane reference, not a finished voice product or certified laboratory system.
+
 ## What this demonstrates
 
 - **A non-blocking Agent Tool:** `start-heating` returns a task ID after durable acceptance. The agent can immediately continue other work.
@@ -16,22 +20,34 @@ The repository deliberately puts the LLM outside the physical safety-control loo
 ## Architecture in one minute
 
 ```mermaid
-flowchart LR
-    U[User speech] --> VA[Voice Agent Provider]
-    VA -->|typed tool| G[Agent Gateway]
-    G -->|request_id| R[HeatingRequest]
-    R -->|claim device| C[HeaterCoordinator]
-    R -->|durable send; return task_id| I[WorkflowInvoker]
-    I --> W[HeatingWorkflow]
-    W --> D[HeaterDevice Adapter]
-    W --> B[AgentInbox]
-    B -->|event available| VA
+flowchart TB
+    subgraph Conversation[Conversation plane — replaceable]
+        U[User speech] --> VA[Voice Agent Provider<br/>not implemented here]
+        VA -->|typed task tool| G[Agent Gateway]
+        G -->|202 + taskId| VA
+        VA --> O[Continue answering or use other tools]
+    end
 
-    classDef optional stroke-dasharray: 5 5;
-    class VA optional;
+    subgraph Control[Deterministic control plane — implemented]
+        G --> T[HeatingTools]
+        T --> R[HeatingRequest<br/>requestId idempotency]
+        R --> C[HeaterCoordinator<br/>deviceId ownership]
+        R -. durable background send .-> W[HeatingWorkflow<br/>taskId execution]
+        W <--> P[HeatingTaskRecord<br/>query projection + cancel arbiter]
+        W --> D[HeaterDevice Adapter<br/>private raw API]
+        W --> B[AgentInbox<br/>session delivery]
+        B -->|pending result| T
+    end
+
+    subgraph Hardware[Physical boundary]
+        D --> H[Simulator now<br/>real heater later]
+    end
+
+    classDef deferred stroke-dasharray: 5 5;
+    class VA,H deferred;
 ```
 
-The `Voice Agent Provider` is a deliberate plug-in boundary, not part of this keyless reference runtime. OpenAI Realtime, LiveKit, or a DeepSeek-based STT/LLM/TTS pipeline can all call the same task-level HTTP API. No model receives heater credentials or raw device endpoints.
+The `Voice Agent Provider` is a deliberate plug-in boundary, not part of this keyless reference runtime. OpenAI Realtime, LiveKit, or a DeepSeek-based STT/LLM/TTS pipeline would each require a provider-specific adapter, but none changes the task-level workflow API. No model receives heater credentials or raw device endpoints.
 
 See [System design](docs/system-design.md) for the complete flow and ownership model.
 For a Chinese architecture overview, see [系统设计（中文版）](docs/system-design.zh-CN.md).
@@ -54,7 +70,7 @@ It does **not** wait for heat-up or hold completion. A single agent can therefor
 src/domain/                 Pure heating state machine and timing policy
 src/contracts/              Model-facing and HTTP-facing typed contracts
 src/gateway/                Stable Agent Tool HTTP API
-src/runtime/                Restate workflows, device lock, inbox, simulator
+src/runtime/                Restate workflow, durable projection, device lock, inbox, simulator
 test/domain/                Fake-time state-machine verification
 scripts/e2e.mjs             Docker orchestration and runtime acceptance test
 docs/system-design.md       Components, sequence, state and trust boundaries
@@ -137,7 +153,7 @@ docker compose config
 pnpm test:e2e
 ```
 
-The unit tests use explicit observation timestamps and do not sleep. `test:e2e` starts an isolated Compose project and verifies asynchronous acceptance, immediate query/cancel, idempotency, per-device locking, parallel devices, close-failure isolation, runtime restart recovery, and single event delivery.
+The unit tests use explicit observation timestamps and do not sleep. `test:e2e` starts an isolated Compose project and verifies internal-service privacy, asynchronous acceptance, unknown-task semantics, immediate query/cancel, idempotency, per-device locking, parallel devices, close-failure isolation, stale-gap protection after runtime restart, durable task projection, and pending-event delivery.
 
 ## Implemented versus intentionally deferred
 
@@ -150,12 +166,17 @@ The unit tests use explicit observation timestamps and do not sleep. `test:e2e` 
 | Notification | Agent session inbox and acknowledgement | Reconnect policy and retained conversation lifecycle |
 | Safety | Deterministic rules and fail-closed states | Device-specific limits, emergency procedures, formal risk review |
 
+The public Restate ingress exposes only `HeatingTools` and the evaluation-only `SimulatorAdmin`. Raw device, workflow, lock, inbox, request, and task-record handlers are ingress-private. Production deployment must omit `SimulatorAdmin` and protect Restate ingress/admin ports with network and workload identity controls.
+
 This is not represented as a certified laboratory control system. The [production-readiness document](docs/production-readiness.md) names the work still required before controlling real equipment.
 
 ## Design documents
 
 - [Product contract](docs/product-contract.md)
 - [System design](docs/system-design.md)
+- [Technical delivery report (Chinese)](docs/technical-delivery-report.zh-CN.md)
+- [Security boundaries](docs/security-boundaries.md)
+- [Verification matrix](docs/verification-matrix.md)
 - [Architecture decisions](docs/architecture-decisions.md)
 - [Failure semantics](docs/failure-semantics.md)
 - [Production readiness](docs/production-readiness.md)

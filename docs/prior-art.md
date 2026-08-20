@@ -1,6 +1,6 @@
 # Prior Art and Reuse Assessment
 
-Reviewed on 2026-08-21. The goal was to reuse mature boundaries without mistaking an Agent framework or device SDK for the complete safety workflow.
+Reviewed on 2026-08-21 from official documentation and primary GitHub repositories. The goal was to reuse mature boundaries without mistaking an Agent framework or device SDK for the complete safety workflow. Repository activity is a point-in-time signal, not a durability guarantee.
 
 ## Finding
 
@@ -17,7 +17,7 @@ The system is therefore composed from reusable layers while keeping the small do
 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | Typed tools, plugins, sessions, approvals and background jobs | General developer-preview harness; its local jobs are process-local and it does not supply a real-time audio transport or durable heater workflow |
 | [Home Assistant Assist](https://developers.home-assistant.io/docs/voice/pipelines/) | Wake/STT/intent/TTS pipeline and entity-oriented tool exposure | Adopting it would turn the deliverable into a Home Assistant integration, while accumulated hold timing and close semantics remain custom |
 
-Decision: keep a thin provider adapter above a stable task-level API. OpenAI Realtime, LiveKit, or a DeepSeek-based STT/LLM/TTS stack can be added without changing the workflow.
+Decision: keep a thin provider adapter above a stable task-level API. OpenAI Realtime, LiveKit, or a DeepSeek-based STT/LLM/TTS stack can be added without changing the workflow API, but each still needs a different media/session adapter and is not assumed to have feature parity.
 
 ## Durable execution
 
@@ -25,6 +25,7 @@ Decision: keep a thin provider adapter above a stable task-level API. OpenAI Rea
 | --- | --- | --- |
 | [Restate](https://docs.restate.dev/foundations/services) | Keyed Virtual Objects map directly to device, request and session consistency boundaries; workflows provide durable state, signals and [timers](https://docs.restate.dev/develop/ts/durable-timers) | Selected for the reviewable reference; server BSL implications are disclosed in ADR 0002 |
 | [Temporal](https://github.com/temporalio/temporal) | Most mature long-running workflow and testing ecosystem | Credible production alternative, but requires more service and lock concepts for this take-home scope |
+| [DBOS](https://github.com/dbos-inc/dbos-transact-ts) | TypeScript durable workflows backed by PostgreSQL with a small application footprint | Credible when PostgreSQL is already required; device-key serialization and session inbox still need application design |
 | PostgreSQL plus a job worker | Familiar storage and operational ownership | Would require application code for leases, fencing, timers, signals, recovery and outbox semantics |
 
 Decision: Restate removes scheduler plumbing while leaving the temperature reducer independent and portable.
@@ -38,6 +39,24 @@ Decision: Restate removes scheduler plumbing while leaving the temperature reduc
 | [SiLA 2 Python](https://sila2.gitlab.io/sila_python/) | Standardized laboratory device communication and code generation | Consider when a broader instrument estate requires the standard; current Python package is maintenance-only |
 
 Decision: retain the narrow `HeaterDevice` boundary (`setTemperature`, `getTemperature`, `close`). The simulator implements it now; the real adapter is selected only after the device protocol is known.
+
+## Reproducible comparison snapshot
+
+| Candidate | Language / license signal | Reusable layer | Why not selected as the whole system |
+| --- | --- | --- | --- |
+| OpenAI Agents SDK JS | TypeScript / MIT | realtime Agent and typed tools | no durable physical workflow |
+| LiveKit Agents | Python / Apache-2.0 | media, rooms, SIP and playout lifecycle | larger deployment; no durable device state |
+| DeepSeek Harness | TypeScript / project repository license; developer preview | general Agent harness and tool/session plugins | no native realtime audio; local jobs are process-local |
+| Restate Server + TS SDK | Rust server under BSL; SDK MIT | durable keyed orchestration | selected; production license/operations review required |
+| Temporal | Go server and TS SDK / MIT | durable workflow platform | strongest production alternative; heavier review surface here |
+| DBOS Transact TS | TypeScript / official repository license | Postgres-backed durable execution | best fit when Postgres is already a platform dependency |
+| PyLabRobot | Python / MIT | multi-vendor laboratory device abstraction | adopt only when supported hardware or breadth justifies a service |
+| Opentrons | Python / Apache-2.0 | device-specific temperature behavior | useful directly only for Opentrons hardware |
+| SiLA 2 Python | Python / project repository license; maintenance-only status documented | laboratory communication standard | unsuitable as the main new single-device dependency |
+
+For voice intent prior art, [Rhasspy 3](https://github.com/rhasspy/rhasspy3) demonstrates structured local voice pipelines, but its repository is archived and is not selected as a new runtime dependency.
+
+The reference stack pins Restate Server `1.7.2` and TypeScript SDK `1.16.4`; the versions are deliberately not `latest`. Other projects above are evaluated as integration options rather than vendored dependencies, so their exact version must be selected when that boundary is implemented.
 
 ## What remains intentionally custom
 

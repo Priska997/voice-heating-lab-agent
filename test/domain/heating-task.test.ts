@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyAcceptedCancellationBeforeClose,
   createHeatingTask,
   hasHeatUpTimedOut,
   InvalidTemperatureObservationError,
@@ -64,6 +65,18 @@ describe("heating task state machine", () => {
     expect(task.accumulatedInRangeMs).toBe(5_000);
   });
 
+  it("does not credit an unobserved interval longer than the configured gap", () => {
+    let task = observeTemperature(startedTask(), 80, 1_000, 2_000);
+    task = observeTemperature(task, 80, 6_000, 2_000);
+
+    expect(task.holdCondition).toBe("PAUSED_STALE_OBSERVATION");
+    expect(task.accumulatedInRangeMs).toBe(0);
+
+    task = observeTemperature(task, 80, 7_000, 2_000);
+    expect(task.holdCondition).toBe("IN_RANGE");
+    expect(task.accumulatedInRangeMs).toBe(1_000);
+  });
+
   it("clamps accumulated time and requests close when the hold is satisfied", () => {
     let task = observeTemperature(startedTask(5_000), 80, 1_000);
     task = observeTemperature(task, 80, 7_000);
@@ -109,6 +122,34 @@ describe("heating task state machine", () => {
     expect(() => observeTemperature(task, 80, 1_000)).toThrow(
       "strictly increasing timestamps",
     );
+  });
+
+  it("rejects observations that predate the accepted task", () => {
+    const task = markHeatingStarted(
+      createHeatingTask({
+        taskId: "task-1",
+        requestId: "request-1",
+        deviceId: "heater-1",
+        agentSessionId: "session-1",
+        targetTemperatureC: 80,
+        holdDurationMs: 1_000,
+        startedAtMs: 10_000,
+      }),
+    );
+
+    expect(() => observeTemperature(task, 80, 9_999)).toThrow(
+      "cannot predate the task",
+    );
+  });
+
+  it("lets an accepted cancellation win before the close decision is sealed", () => {
+    let task = observeTemperature(startedTask(1_000), 80, 1_000);
+    task = observeTemperature(task, 80, 2_000);
+
+    const cancelled = applyAcceptedCancellationBeforeClose(task, "LAST_MOMENT_CANCEL");
+
+    expect(cancelled.closeIntent).toBe("CANCELLATION");
+    expect(recordCloseSucceeded(cancelled, 2_100).status).toBe("CANCELLED");
   });
 
   it("classifies non-finite readings as invalid observations", () => {

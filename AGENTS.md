@@ -33,7 +33,7 @@ When proposing a technical stack:
 - Keep the Voice Agent provider replaceable. Agent SDK types must not leak into domain or workflow code.
 - Public Agent tools operate on task-level commands; never expose raw heater methods to an LLM.
 - Changes to timing or terminal-state semantics require deterministic unit tests.
-- `HeatingRequest` owns request idempotency, `HeatingTaskAcceptance` closes the pre-workflow query window, `HeaterCoordinator` owns device exclusivity, `HeatingWorkflow` owns runtime lifecycle state, and `AgentInbox` owns in-agent delivery.
+- `HeatingRequest` owns request idempotency, `HeatingTaskRecord` owns the durable query projection and cancel/complete arbitration, `HeaterCoordinator` owns device exclusivity, `HeatingWorkflow` owns execution, and `AgentInbox` owns in-agent delivery.
 - A device stays reserved after `NEEDS_ATTENTION`; only an explicit operator recovery flow may release it.
 - Do not describe an inbox acknowledgement as proof of audible playback unless the Agent provider sends it after playback completes.
 

@@ -6,6 +6,7 @@ type CoordinatorState = {
 
 export const heaterCoordinator = restate.object({
   name: "HeaterCoordinator",
+  options: { ingressPrivate: true },
   handlers: {
     claim: async (
       ctx: restate.ObjectContext<CoordinatorState>,

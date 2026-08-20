@@ -21,6 +21,8 @@ The repository proves architecture and domain behavior with a deterministic simu
 - authorization for start, cancel, status, and operator recovery;
 - server-issued confirmation receipts bound to user, device, target, and duration;
 - protection against one tenant learning another tenant's task or device state.
+- workload identity between Gateway, Restate, runtime, and the real device adapter;
+- no public exposure of the Restate admin API or internal service ingress;
 
 ### Operational safety
 
@@ -38,6 +40,7 @@ The repository proves architecture and domain behavior with a deterministic simu
 - clock synchronization between runtime, Restate, and devices;
 - workflow deployment/version retention while long tasks are sleeping;
 - migration strategy for tasks started by old workflow code;
+- explicit retention/archival policy for `HeatingTaskRecord` and `AgentInbox` state;
 - load and soak tests across the expected number of devices.
 
 ### Observability and operations
