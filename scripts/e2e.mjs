@@ -250,11 +250,12 @@ async function main() {
   const restartDowntimeMs = 1_500;
   await new Promise((resolve) => setTimeout(resolve, restartDowntimeMs));
   compose("start", "runtime");
+  const runtimeRestartedAtMs = Date.now();
   const afterRestart = await waitForTask(
     restartTask.body.taskId,
     (task) =>
       task.status === "HOLDING" &&
-      task.lastObservation?.observedAtMs > beforeRestart.lastObservation.observedAtMs,
+      task.lastObservation?.observedAtMs >= runtimeRestartedAtMs,
     30_000,
   );
   assert.ok(
