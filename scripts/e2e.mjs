@@ -105,6 +105,21 @@ async function pendingEvents(agentSessionId) {
   return response.body;
 }
 
+async function waitForPendingEvent(agentSessionId, taskId, timeoutMs = 25_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const matchingEvents = (await pendingEvents(agentSessionId)).filter(
+      (event) => event.taskId === taskId,
+    );
+    if (matchingEvents.length > 0) {
+      assert.equal(matchingEvents.length, 1, "a task must publish exactly one pending event");
+      return matchingEvents[0];
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`timed out waiting for completion event for task ${taskId}`);
+}
+
 async function waitForTask(taskId, predicate, timeoutMs = 25_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -194,12 +209,12 @@ async function main() {
   await waitForTask(parallel.body.taskId, (task) => task.status === "CANCELLED");
 
   await waitForTask(primary.body.taskId, (task) => task.status === "COMPLETED");
-  const primaryEvents = (await pendingEvents(primaryInput.agentSessionId)).filter(
-    (event) => event.taskId === primary.body.taskId,
+  const primaryEvent = await waitForPendingEvent(
+    primaryInput.agentSessionId,
+    primary.body.taskId,
   );
-  assert.equal(primaryEvents.length, 1);
   const acknowledgement = await request(
-    `/v1/agent/sessions/${primaryInput.agentSessionId}/events/${primaryEvents[0].eventId}/acknowledge`,
+    `/v1/agent/sessions/${primaryInput.agentSessionId}/events/${primaryEvent.eventId}/acknowledge`,
     { method: "POST" },
   );
   assert.equal(acknowledgement.status, 200, JSON.stringify(acknowledgement.body));
@@ -232,24 +247,27 @@ async function main() {
   // Use an abrupt kill: `compose stop` waits for its graceful timeout, which
   // can let a short hold finish before the container actually stops on CI.
   compose("kill", "-s", "SIGKILL", "runtime");
-  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  const restartDowntimeMs = 1_500;
+  await new Promise((resolve) => setTimeout(resolve, restartDowntimeMs));
   compose("start", "runtime");
   const afterRestart = await waitForTask(
     restartTask.body.taskId,
     (task) =>
       task.status === "HOLDING" &&
-      task.lastObservation?.observedAtMs > beforeRestart.lastObservation.observedAtMs &&
-      task.holdCondition === "PAUSED_STALE_OBSERVATION",
+      task.lastObservation?.observedAtMs > beforeRestart.lastObservation.observedAtMs,
     30_000,
   );
-  assert.equal(afterRestart.holdCondition, "PAUSED_STALE_OBSERVATION");
-  await waitForTask(restartTask.body.taskId, (task) => task.status === "COMPLETED", 30_000);
-  assert.equal(
-    (await pendingEvents(restartInput.agentSessionId)).filter(
-      (event) => event.taskId === restartTask.body.taskId,
-    ).length,
-    1,
+  assert.ok(
+    afterRestart.lastObservation.observedAtMs - beforeRestart.lastObservation.observedAtMs >
+      Number(composeEnvironment.MAXIMUM_OBSERVATION_GAP_MS),
+    "the restart must create an observation gap larger than the creditable threshold",
   );
+  assert.ok(
+    afterRestart.accumulatedInRangeMs - beforeRestart.accumulatedInRangeMs < restartDowntimeMs,
+    "runtime downtime must not be credited as in-range hold time",
+  );
+  await waitForTask(restartTask.body.taskId, (task) => task.status === "COMPLETED", 30_000);
+  await waitForPendingEvent(restartInput.agentSessionId, restartTask.body.taskId);
 
   process.stdout.write(
     "E2E passed: private service boundary, async acceptance, not-found semantics, idempotency, locking, idempotent cancellation, close failure, restart-gap safety, durable task projection, and pending delivery.\n",

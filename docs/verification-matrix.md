@@ -23,7 +23,7 @@ Evidence recorded on 2026-08-21 against the current working implementation. Unit
 | --- | --- | --- |
 | ±0.5°C is inclusive | lower and upper boundary unit test | Pass |
 | No interval is credited across an observation outage | stale-gap unit test | Pass |
-| Runtime downtime is not silently credited | restart waits for `PAUSED_STALE_OBSERVATION` | Pass |
+| Runtime downtime is not silently credited | restart creates an over-threshold observation gap and compares accumulated hold time before/after recovery | Pass |
 | Readings cannot predate the task | historical-observation unit test | Pass |
 | Duplicate or decreasing timestamps fail closed | non-monotonic observation unit test | Pass |
 | Cancellation accepted before seal overrides normal close intent | accepted-cancellation reducer test; record is single-writer | Pass |
