@@ -109,7 +109,7 @@ Restate 能持久记录调用结果，但不能把物理 HTTP 命令神奇变成
 
 当前只暴露任务级操作：start、status、cancel、session events 和 ack。LLM 不获得 Restate 内部路径、设备凭据或 raw heater 方法。
 
-这仍不是生产安全边界：localhost bind 和 ingress-private 不是完整认证。生产必须补 workload identity、Gateway 用户认证、租户/设备授权、一次性确认 ID、网络策略、审计和 Restate request identity。评估专用 `SimulatorAdmin` 必须从真实设备部署中删除。
+这仍不是生产安全边界：localhost bind 和 ingress-private 不是完整认证。生产必须补 workload identity、Gateway 用户认证、租户/设备授权、一次性确认 ID、网络策略、审计和 Restate request identity。开发专用 `SimulatorAdmin` 必须从真实设备部署中删除。
 
 ## 8. 验证证据
 
@@ -117,7 +117,7 @@ Restate 能持久记录调用结果，但不能把物理 HTTP 命令神奇变成
 
 ```text
 pnpm check                 PASS
-pnpm test                  PASS — 20/20
+pnpm test                  PASS — 21/21（含全仓 Mermaid 语法校验）
 pnpm build                 PASS
 docker compose config      PASS
 pnpm test:e2e              PASS

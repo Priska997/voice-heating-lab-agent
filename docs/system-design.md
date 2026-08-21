@@ -60,7 +60,7 @@ sequenceDiagram
     participant Inbox as AgentInbox(sessionId)
 
     User->>Agent: “Heat to 80°C and hold 20 minutes”
-    Agent->>User: Repeat target and duration; ask to confirm
+    Agent->>User: Repeat target and duration, then ask to confirm
     User->>Agent: Confirm
     Agent->>Gateway: startHeating(command + confirmation receipt)
     Gateway->>Request: start (key = requestId)

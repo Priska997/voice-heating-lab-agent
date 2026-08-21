@@ -1,6 +1,6 @@
 # Verification Matrix
 
-Evidence recorded on 2026-08-21 against the current working implementation. Unit tests use explicit timestamps; E2E uses Restate Server 1.7.2 in an isolated Docker Compose project.
+Evidence recorded on 2026-08-21 against the current working implementation. Domain tests use explicit timestamps, documentation tests parse every Mermaid block, and E2E uses Restate Server 1.7.2 in an isolated Docker Compose project.
 
 ## Product acceptance criteria
 
@@ -32,6 +32,7 @@ Evidence recorded on 2026-08-21 against the current working implementation. Unit
 | Accepted task is immediately queryable | E2E query immediately after 202 | Pass |
 | Terminal state is independent of workflow retention | status reads `HeatingTaskRecord`, updated on every transition | Code-reviewed; E2E terminal query passes |
 | Internal Restate handlers cannot bypass Gateway | E2E raw `HeaterDevice` call must fail | Pass |
+| Embedded architecture diagrams use valid Mermaid syntax | repository-wide Markdown block parser test | Pass |
 | Acknowledged events are not listed as pending | E2E list after ack | Pass |
 | Physical workflow does not wait indefinitely for voice ack | workflow returns after event publish; TaskRecord is updated by Inbox | Code-reviewed; E2E COMPLETED→NOTIFIED passes |
 | `NEEDS_ATTENTION` retains device reservation | E2E second start receives `DEVICE_BUSY` | Pass |
@@ -40,7 +41,7 @@ Evidence recorded on 2026-08-21 against the current working implementation. Unit
 
 ```text
 pnpm check                 PASS
-pnpm test                  PASS — 20 tests
+pnpm test                  PASS — 21 tests
 pnpm build                 PASS
 docker compose config      PASS
 pnpm test:e2e              PASS
