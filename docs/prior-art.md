@@ -23,8 +23,8 @@ Decision: keep a thin provider adapter above a stable task-level API. OpenAI Rea
 
 | Option | Fit | Decision |
 | --- | --- | --- |
-| [Restate](https://docs.restate.dev/foundations/services) | Keyed Virtual Objects map directly to device, request and session consistency boundaries; workflows provide durable state, signals and [timers](https://docs.restate.dev/develop/ts/durable-timers) | Selected for the reviewable reference; server BSL implications are disclosed in ADR 0002 |
-| [Temporal](https://github.com/temporalio/temporal) | Most mature long-running workflow and testing ecosystem | Credible production alternative, but requires more service and lock concepts for this take-home scope |
+| [Restate](https://docs.restate.dev/foundations/services) | Keyed Virtual Objects map directly to device, request and session consistency boundaries; workflows provide durable state, signals and [timers](https://docs.restate.dev/develop/ts/durable-timers) | Selected for the independently runnable reference; server BSL implications are disclosed in ADR 0002 |
+| [Temporal](https://github.com/temporalio/temporal) | Most mature long-running workflow and testing ecosystem | Credible production alternative, but requires more service and lock concepts for the current single-device scope |
 | [DBOS](https://github.com/dbos-inc/dbos-transact-ts) | TypeScript durable workflows backed by PostgreSQL with a small application footprint | Credible when PostgreSQL is already required; device-key serialization and session inbox still need application design |
 | PostgreSQL plus a job worker | Familiar storage and operational ownership | Would require application code for leases, fencing, timers, signals, recovery and outbox semantics |
 
@@ -42,7 +42,7 @@ Decision: retain the narrow `HeaterDevice` boundary (`setTemperature`, `getTempe
 
 ## Reproducible comparison snapshot
 
-| Candidate | Language / license signal | Reusable layer | Why not selected as the whole system |
+| Option | Language / license signal | Reusable layer | Why not selected as the whole system |
 | --- | --- | --- | --- |
 | OpenAI Agents SDK JS | TypeScript / MIT | realtime Agent and typed tools | no durable physical workflow |
 | LiveKit Agents | Python / Apache-2.0 | media, rooms, SIP and playout lifecycle | larger deployment; no durable device state |
@@ -68,4 +68,4 @@ The reference stack pins Restate Server `1.7.2` and TypeScript SDK `1.16.4`; the
 - close-confirmed completion and `NEEDS_ATTENTION` isolation;
 - Agent-session delivery acknowledgement.
 
-These are product semantics, not generic framework features, so keeping them in a pure, tested reducer makes the boundary reviewable and replaceable.
+These are product semantics, not generic framework features, so keeping them in a pure, tested reducer makes the boundary auditable and replaceable.

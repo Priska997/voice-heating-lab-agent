@@ -36,13 +36,13 @@ flowchart LR
 | --- | --- | --- | --- |
 | 语言 | TypeScript / Node.js 22 | Gateway、Tool Contract、Workflow 共用类型；适合后续 Web Voice Adapter | 真实设备若只有 Python SDK，需独立 Adapter 服务 |
 | HTTP | Fastify + Zod | 小、明确、运行时校验；隔离产品 API 与 Restate 内部 URL | 当前未含认证/租户中间件 |
-| 持久编排 | Restate 1.7.2 + SDK 1.16.4 | keyed single-writer、durable send、timer、signal、replay 与本地 UI 对本题映射直接 | Reviewer 熟悉度较低；Server BSL；生产需 HA/身份/备份 |
+| 持久编排 | Restate 1.7.2 + SDK 1.16.4 | keyed single-writer、durable send、timer、signal、replay 与本地 UI 对当前业务模型映射直接 | 团队熟悉度可能较低；Server BSL；生产需 HA/身份/备份 |
 | 本地运行 | Docker Compose | 无云账号、无 API Key，一条命令看到全栈 | 单节点不是生产拓扑 |
 | 测试 | Vitest + 显式时间戳 + Compose E2E | reducer 无真实等待；基础设施行为由真实 Restate 容器证明 | 尚无 Voice Provider 和真实硬件 E2E |
 
 ### 为什么不是 PostgreSQL + Worker
 
-该方案熟悉且透明，但首版需要自行正确实现 lease、fencing、due-task scan、持久 timer、取消 signal、恢复和 outbox。它可以成为已有 Postgres 平台中的合理选择，但在独立 take-home 中会让基础设施代码淹没产品状态机。
+该方案熟悉且透明，但首版需要自行正确实现 lease、fencing、due-task scan、持久 timer、取消 signal、恢复和 outbox。它可以成为已有 Postgres 平台中的合理选择，但在独立初始系统中会让基础设施代码淹没产品状态机。
 
 ### 为什么不是 Temporal
 
@@ -144,9 +144,9 @@ E2E 使用真实 Restate Server 1.7.2 和隔离 Compose project，验证 private
 
 Restate HA、volume backup/restore、server restart E2E、workflow versioning、结构化审计、指标告警、Inbox retention/lease 与双连接 eventId 去重。
 
-## 10. 面试说明建议
+## 10. 系统讲解顺序
 
-建议演示顺序：
+建议验证与讲解顺序：
 
 1. 先说明产品 Contract 与三条不可破坏的事实：±0.5°C 累计、close 后才完成、Agent 不被阻塞；
 2. 用系统图解释对话平面和控制平面分离；
@@ -154,4 +154,4 @@ Restate HA、volume backup/restore、server restart E2E、workflow versioning、
 4. 主动指出 Voice/身份/真实设备未实现，并解释为什么它们是集成边界而不是隐藏缺口；
 5. 用取消仲裁和 ingress-private 修复说明审计如何改变架构，而不只是补 happy path。
 
-这比声称“已经是完整 Agent 产品”更能体现工程判断：实现与证据匹配，风险被命名，下一步有清晰纵向切片。
+这一顺序确保实现与证据匹配、风险被明确命名，并让下一步纵向切片保持清晰。

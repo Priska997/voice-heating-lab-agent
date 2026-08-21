@@ -22,11 +22,11 @@ When proposing a technical stack:
 
 1. Start from the product contract in `docs/product-contract.md`.
 2. Compare at least two credible implementation options.
-3. Separate take-home MVP needs from production-hardening concerns.
+3. Separate the current runnable scope from production-hardening concerns.
 4. Prefer the smallest stack that demonstrates durable orchestration, concurrency, testability, and safety boundaries.
 5. Include a deterministic fake clock and simulated heater in the test strategy.
 6. Treat device API details, limits, polling cadence, and retry budgets as configuration or adapter contracts unless confirmed otherwise.
-7. Do not introduce infrastructure that cannot be run and reviewed easily by an external evaluator.
+7. Do not introduce infrastructure that cannot be run and maintained easily by a new developer.
 
 ## Implementation constraints
 

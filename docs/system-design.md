@@ -213,8 +213,8 @@ An acknowledgement proves only what the provider contract defines. A production 
 - Fastify provides a stable product API and prevents Restate ingress URLs from becoming the Agent contract.
 - Zod validates untrusted tool inputs at runtime.
 - Restate provides keyed single-writer state, durable calls, timers, signals, and restart recovery.
-- Docker Compose makes the runtime and embedded durable store reviewable without a cloud account.
+- Docker Compose makes the runtime and embedded durable store inspectable without a cloud account.
 
-All raw device, workflow, lock, request, inbox, and task-record handlers are `ingressPrivate`. Only task-level `HeatingTools` and the explicitly evaluation-only `SimulatorAdmin` are reachable through public Restate ingress. Production must omit `SimulatorAdmin`, avoid publishing Restate admin ports, and configure workload identity.
+All raw device, workflow, lock, request, inbox, and task-record handlers are `ingressPrivate`. Only task-level `HeatingTools` and the explicitly development-only `SimulatorAdmin` are reachable through public Restate ingress. Production must omit `SimulatorAdmin`, avoid publishing Restate admin ports, and configure workload identity.
 
 The rationale and alternatives are recorded in [ADR 0001](adr/0001-thin-agent-durable-workflow.md) and [ADR 0002](adr/0002-restate-runtime.md).

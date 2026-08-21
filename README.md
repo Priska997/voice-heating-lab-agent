@@ -8,7 +8,7 @@ The repository deliberately puts the LLM outside the physical safety-control loo
 >
 > **Deliberately deferred:** a real Voice Agent provider, trusted identity/confirmation, and a real heater adapter. This is a control-plane reference, not a finished voice product or certified laboratory system.
 
-## What this demonstrates
+## Core capabilities
 
 - **A non-blocking Agent Tool:** `start-heating` returns a task ID after durable acceptance. The agent can immediately continue other work.
 - **A durable physical workflow:** Restate records task state, timers, device ownership, cancellation, and completion across process restarts.
@@ -100,8 +100,8 @@ Start a confirmed task:
 curl -X POST http://localhost:3000/v1/agent/tools/start-heating \
   -H 'content-type: application/json' \
   -d '{
-    "requestId": "demo-request-001",
-    "agentSessionId": "demo-session",
+    "requestId": "example-request-001",
+    "agentSessionId": "example-session",
     "deviceId": "heater-1",
     "targetTemperatureC": 30,
     "holdDurationS": 3,
@@ -119,7 +119,7 @@ The response arrives before heating completes:
 {
   "accepted": true,
   "taskId": "<task-id>",
-  "requestId": "demo-request-001"
+  "requestId": "example-request-001"
 }
 ```
 
@@ -127,14 +127,14 @@ Query status and session events:
 
 ```bash
 curl http://localhost:3000/v1/agent/tools/heating-status/<task-id>
-curl http://localhost:3000/v1/agent/sessions/demo-session/events
+curl http://localhost:3000/v1/agent/sessions/example-session/events
 ```
 
 After the Agent has spoken the completion message, it acknowledges the event:
 
 ```bash
 curl -X POST \
-  http://localhost:3000/v1/agent/sessions/demo-session/events/<event-id>/acknowledge
+  http://localhost:3000/v1/agent/sessions/example-session/events/<event-id>/acknowledge
 ```
 
 That acknowledgement moves a normally completed task from `COMPLETED` to `NOTIFIED`.
@@ -166,7 +166,7 @@ The unit tests use explicit observation timestamps and do not sleep. `test:e2e` 
 | Notification | Agent session inbox and acknowledgement | Reconnect policy and retained conversation lifecycle |
 | Safety | Deterministic rules and fail-closed states | Device-specific limits, emergency procedures, formal risk review |
 
-The public Restate ingress exposes only `HeatingTools` and the evaluation-only `SimulatorAdmin`. Raw device, workflow, lock, inbox, request, and task-record handlers are ingress-private. Production deployment must omit `SimulatorAdmin` and protect Restate ingress/admin ports with network and workload identity controls.
+The public Restate ingress exposes only `HeatingTools` and the development-only `SimulatorAdmin`. Raw device, workflow, lock, inbox, request, and task-record handlers are ingress-private. Production deployment must omit `SimulatorAdmin` and protect Restate ingress/admin ports with network and workload identity controls.
 
 This is not represented as a certified laboratory control system. The [production-readiness document](docs/production-readiness.md) names the work still required before controlling real equipment.
 
@@ -188,4 +188,4 @@ This is not represented as a certified laboratory control system. The [productio
 
 - Never commit credentials, real device addresses, private datasets, or personal information.
 - Use the simulator until a real device contract and safety review are approved.
-- No open-source license has been selected; this repository is currently provided for evaluation only.
+- No open-source license has been selected; all rights are reserved.

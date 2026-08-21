@@ -32,7 +32,7 @@ The current command has one intent, three business parameters, and three task-le
 
 A general harness adds model routing, delegation, session policy, and tool-planning behavior without replacing the required device workflow. It also expands the probabilistic surface around a physical side effect.
 
-DeepSeek Harness was evaluated specifically. It provides typed tools, plugins, sessions, background jobs, and subagents, but it is a developer-preview general Agent harness rather than a real-time voice or durable physical-workflow engine. Its default local background-job provider is process-local. Using the DeepSeek model through its function-calling API remains compatible with this design.
+DeepSeek Harness was assessed specifically. It provides typed tools, plugins, sessions, background jobs, and subagents, but it is a developer-preview general Agent harness rather than a real-time voice or durable physical-workflow engine. Its default local background-job provider is process-local. Using the DeepSeek model through its function-calling API remains compatible with this design.
 
 ## Consequences
 

@@ -5,7 +5,7 @@
 
 ## Context
 
-The heating lifecycle needs durable timers, restart recovery, per-device exclusivity, signals, queryable state, and a background invocation that outlives the Agent turn. The repository must remain understandable and runnable by an external reviewer.
+The heating lifecycle needs durable timers, restart recovery, per-device exclusivity, signals, queryable state, and a background invocation that outlives the Agent turn. The repository must remain understandable and runnable by a new maintainer.
 
 ## Options considered
 
@@ -55,7 +55,7 @@ The source-of-truth mapping is:
 
 ### Negative
 
-- Restate is less familiar to many reviewers than PostgreSQL.
+- Restate is less familiar to many engineering teams than PostgreSQL.
 - The Restate server uses the Business Source License; legal review is required for a commercial deployment.
 - Long sleeps require keeping the compatible workflow deployment revision available.
 - Restate durability does not make unknown physical HTTP outcomes exactly-once.

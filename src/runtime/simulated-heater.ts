@@ -126,13 +126,13 @@ export const heaterDevice = restate.object({
 });
 
 /**
- * Evaluation-only control plane for deterministic fault injection. A real
+ * Development-only control plane for deterministic fault injection. A real
  * deployment must omit this service and register only its authenticated
  * hardware adapter.
  */
 export const simulatorAdmin = restate.service({
   name: "SimulatorAdmin",
-  description: "Evaluation-only simulator configuration; do not deploy with real hardware.",
+  description: "Development-only simulator configuration; do not deploy with real hardware.",
   handlers: {
     configure: async (
       ctx: restate.Context,

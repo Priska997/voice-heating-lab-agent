@@ -46,7 +46,7 @@ flowchart LR
 - Raw device credentials and endpoints are not present in model-facing schemas.
 - An unconfirmed close never produces `COMPLETED`, and the device reservation remains held.
 
-## Evaluation-only exception
+## Development-only exception
 
 `SimulatorAdmin` is public through local Restate ingress so the E2E suite can inject a close failure. It controls only the deterministic simulator and is explicitly not part of the Agent Tool contract.
 

@@ -58,18 +58,18 @@ A deterministic simulator implements the same interface for local development an
 
 The workflow emits a stable completion event. The agent consumes it and creates the user-facing announcement. No separate push, email, or SMS infrastructure is required for the MVP.
 
-## Technical-stack evaluation criteria
+## Technical-stack selection criteria
 
-Candidate stacks should be compared using:
+Stack options should be compared using:
 
-1. clarity for an external reviewer;
+1. clarity for a new maintainer;
 2. durable timers and restart recovery;
 3. deterministic fake-time testing;
 4. support for agent concurrency and task callbacks;
 5. minimal infrastructure and setup time;
 6. typed tool contracts and validation;
 7. easy simulated-device integration;
-8. a credible path from take-home MVP to production without pretending the MVP is production-ready.
+8. a credible path from the initial runnable scope to production without presenting the current scope as production-ready.
 
 ## Selected reference stack
 
